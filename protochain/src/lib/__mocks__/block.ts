@@ -1,19 +1,18 @@
-import sha256 from "crypto-js/sha256";
-import Validation from "./validation";
+import Validation from "../validation";
 
 /**
- * Block class represents a single block in the blockchain.
+ * Mocked block class.
  */
 export default class Block {
-    private previousHash: string;
+    previousHash: string;
     private nonce: number;
     private miner: string;
-    private data: string;
+    data: string;
     private hash: string;
     private timestamp: number;
 
     /**
-     * Create a new Block.
+     * Create a new MOCK Block.
      * @param data - A structure containing all data for the block.
      */
     constructor(data?: {
@@ -39,27 +38,22 @@ export default class Block {
      * @param miner - The miner wallet addess.
      */
     mine(dificulty: number, miner: string){
-        this.miner = miner;
-        const prefix = new Array(dificulty + 1).join("0");
         
-        do{
-            this.nonce++;
-            this.hash = this.generateHash();
-        }while(!this.hash.startsWith(prefix));
+        // Mock mining process
     }
 
 
     /**
-     * Get Block hash
+     * Get Mock Block hash
      * @returns the .hash property
      */
     getHash(): string{
-        return this.hash;
+        return this.hash || "abc";
     }
 
 
     /**
-     * Get Block previoushash
+     * Get Mock Block previoushash
      * @returns the .previousHash property
      */
     getPreviousHash(): string{
@@ -68,35 +62,20 @@ export default class Block {
 
 
     /**
-     * Generate the Hash
+     * Generate mock block Hash
      * @returns calculated hash (not the property .hash stored in block)
      */
     generateHash(): string {
-        return sha256(
-            this.data +
-            this.timestamp +
-            this.previousHash +
-            this.nonce +
-            this.miner
-        ).toString();
+        return  "abc";
     }
 
 
     /**
-     * Validate the block.
-     * @param dificulty - The Blockchain current dificulty.
+     * Validate mock block.
      * @returns Return a Validation object indicating if the block is valid.
      */
     isValid(dificulty: number): Validation {
-        if (!this.data) return new Validation(false, "Empty data");
-        if (!this.nonce || !this.miner) {
-            return new Validation(false, "No mined block");
-        }
-
-        const prefix = new Array(dificulty + 1).join("0");
-        if (!this.hash.startsWith(prefix) || this.hash !== this.generateHash())
-            return new Validation(false, "Invalid hash");
-
+        if (this.data.includes("Invalid")) return new Validation(false, "Invalid mock block");
         return new Validation(true);
     }
 }

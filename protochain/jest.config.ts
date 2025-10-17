@@ -20,7 +20,11 @@ const config: Config = {
 
   // Indicates whether the coverage information should be collected while executing the test
   collectCoverage: true,
-  collectCoverageFrom: ["<rootDir>/src/lib/**/*.{ts,tsx}", "!<rootDir>/src/**/*.d.ts"],
+  collectCoverageFrom: [
+    "<rootDir>/src/lib/**/*.{ts,tsx}",
+    "<rootDir>/src/server/**/*.{ts,tsx}",
+    "!<rootDir>/src/server/swaggerConfig.ts",
+    "!<rootDir>/src/**/*.d.ts"],
 
   // An array of glob patterns indicating a set of files for which coverage information should be collected
   // collectCoverageFrom: undefined,
@@ -29,9 +33,10 @@ const config: Config = {
   coverageDirectory: "coverage",
 
   // An array of regexp pattern strings used to skip coverage collection
-  // coveragePathIgnorePatterns: [
-  //   "\\\\node_modules\\\\"
-  // ],
+  coveragePathIgnorePatterns: [
+    "\\\\node_modules\\\\",
+    "/src/lib/blockInfo.ts"
+  ],
 
   // Indicates which provider should be used to instrument code for coverage
   coverageProvider: "v8",
@@ -135,7 +140,7 @@ const config: Config = {
   // runner: "jest-runner",
 
   // The paths to modules that run some code to configure or set up the testing environment before each test
-  // setupFiles: [],
+  setupFiles: ["dotenv/config"],
 
   // A list of paths to modules that run some code to configure or set up the testing framework before each test
   // setupFilesAfterEnv: [],
