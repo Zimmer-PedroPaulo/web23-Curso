@@ -5,11 +5,15 @@ import express, { Request, Response, NextFunction } from "express";
 import morgan from "morgan";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
+import Block from "../lib/block";
 import Blockchain from "../lib/blockchain";
 import { swaggerPaths, createEndpoint } from "./swaggerConfig";
-import Block from "../lib/block";
+import Transaction from '../lib/transaction';
+import TransactionInput from '../lib/transactionInput';
 
 const app = express();
+
+/* c8 ignore next */
 const PORT: number = parseInt(process.env.BLOCKCHAIN_PORT || '3000', 10);
 
 // Configuração do Swagger (Simplificada)
@@ -29,7 +33,7 @@ const swaggerOptions = {
       ...swaggerPaths,
       // Adicione novos endpoints aqui facilmente:
       // '/novo-endpoint': createEndpoint('/novo-endpoint', 'get', 'Descrição breve')
-    }
+    },
   },
   apis: [], // Não precisamos mais de arquivos externos
 };
@@ -50,14 +54,34 @@ app.get("/status", (req, res) => {
     res.json({
         numberOfBlocks: blockchain.getLength(),
         isValid: blockchain.isValid(),
+        memPool: blockchain.getMempool(),
+        protoBlock: blockchain.getNextBlock(),
         BlockChain: blockchain.getChain(),
     });
 });
 
 
 app.get("/blocks/next", (req: Request, res: Response, next: NextFunction) => {
-    res.json(blockchain.getNextBlock());
+	res.json(blockchain.getNextBlock());
 });
+
+
+// Endpoint: Listar todas as transações da mempool
+app.get('/transactions', (req: Request, res: Response, next: NextFunction) => {
+	return res.json(blockchain.getMempool());
+});
+
+
+// Endpoint: Buscar transação específica por hash
+app.get('/transactions/:hash', (req: Request, res: Response, next: NextFunction) => {
+	const transaction = blockchain.getTransaction(req.params.hash!);
+	if (transaction.mempoolIndex === -1) {
+		return res.sendStatus(404); // Not Found
+	}
+	
+	return res.json(transaction);
+});
+
 
 // Endpoint: Buscar bloco por índice ou hash
 app.get('/blocks/:indexOrHash', (req: Request, res: Response, next: NextFunction) => {
@@ -74,13 +98,83 @@ app.get('/blocks/:indexOrHash', (req: Request, res: Response, next: NextFunction
 
 
 app.post('/blocks/', (req: Request, res: Response, next: NextFunction) => {
-  const block = new Block(req.body);
-  const validation = blockchain.addBlock(block);
+  if (!req.body.miner || req.body.nonce === undefined || req.body.feePerTX === undefined) 
+    return res.status(400).json({ error: 'A JSON {"nonce": number}, {"miner": string}, {"feePerTX": number} is required', received: req.body }); // Bad Request
+
+  const { nonce, miner, feePerTX } = req.body;
+  const validation = blockchain.addBlock(nonce, miner, feePerTX);
+
   if (!validation.success) {
-    return res.status(422).json({ error: validation.message });
+    return res.status(422).json(validation);// Unprocessable Entity
   }
+
+  return res.status(201).json({ message: 'Block added successfully' }); // Created
+});
+
+
+app.post('/transactions/', (req: Request, res: Response, next: NextFunction) => {
+  if (!req.body) {
+    return res.status(400).json({ error: 'Transaction data is required' });
+  }
+
+  const transactionData = req.body;
+  const transaction = new Transaction({
+    ...transactionData
+  });
+
+  const validation = blockchain.addTransaction(transaction);
+  if (!validation.success) {
+    res.status(422).json({ "Validation error": validation.message });
+  }
+
+  res.status(201).json({ message: 'Transaction added successfully', transaction });
+});
+
+
+app.post('/transactions/transactionInputs/sign', (req: Request, res: Response, next: NextFunction) => {
+  const {fromAddress, amount, privateKey} = req.body;
+  if (!fromAddress || !amount || !privateKey) {
+    return res.status(400).json({ error: 'All transactionInput data is required: {fromAddress, amount, privateKey}' });
+  }
+
+  const transactionInput = new TransactionInput({
+    fromAddress: fromAddress,
+    amount: amount
+  });
+
+  transactionInput.sign(privateKey);
+
+  const validation = transactionInput.isValid();
+  if (!validation.success) {
+    res.status(422).json({ "Validation error": validation.message });
+  }
+
+  res.status(201).json({ message: 'TransactionInput created successfully: ', transactionInput });
+});
+
+
+// Endpoint: mine -- Simulate mining the protoBlock -- for manual testing purposes
+// Should not be used in production
+app.post('/mine/', (req: Request, res: Response) => {
+  const blockInfo = req.body;
+  if (!blockInfo) {
+    return res.status(400).json({ error: 'Block info is required' });
+  }
+
+  // const transactions: Transaction[] = blockInfo.protoBlock.transactions.map((tx: any) => new Transaction({
+  //   ...tx
+  // }));
+
+  const block = new Block({
+    previousHash: blockInfo.protoBlock.previousHash,
+    timestamp: blockInfo.protoBlock.timestamp,
+    transactions: blockInfo.protoBlock.transactions
+  });
   
-  return res.status(201).json(block); // Created
+  block.reward("miner_wallet_address", blockInfo.feePerTX);
+  block.mine( blockchain.getDifficulty() );
+
+  res.status(201).json({ nonce: block.getNonce(), miner: block.getMiner(), block });
 });
 
 

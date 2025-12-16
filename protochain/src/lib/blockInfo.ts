@@ -1,12 +1,12 @@
+import Block from "./block";
+
 /**
  * Interface BlockInfo.
  * Informations to mining blocks.
  */
 export default interface BlockInfo{
     index: number;
-    previousHash: string;
-    dificulty: number;
-    maxDificulty: number;
+    difficulty: number;
     feePerTX: number;
-    data: string;
+    protoBlock: Block;
 }
