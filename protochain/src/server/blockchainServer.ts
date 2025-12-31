@@ -10,6 +10,7 @@ import Blockchain from "../lib/blockchain";
 import { swaggerPaths, createEndpoint } from "./swaggerConfig";
 import Transaction from '../lib/transaction';
 import TransactionInput from '../lib/transactionInput';
+import TransactionOutput from '../lib/transactionOutput';
 
 const app = express();
 
@@ -55,12 +56,13 @@ app.get("/status", (req, res) => {
         numberOfBlocks: blockchain.getLength(),
         isValid: blockchain.isValid(),
         memPool: blockchain.getMempool(),
-        protoBlock: blockchain.getNextBlock(),
+        protoBlock: blockchain['protoBlock'],
         BlockChain: blockchain.getChain(),
     });
 });
 
 
+// Endpoint: Obter o próximo bloco (protoBlock)
 app.get("/blocks/next", (req: Request, res: Response, next: NextFunction) => {
 	res.json(blockchain.getNextBlock());
 });
@@ -75,7 +77,7 @@ app.get('/transactions', (req: Request, res: Response, next: NextFunction) => {
 // Endpoint: Buscar transação específica por hash
 app.get('/transactions/:hash', (req: Request, res: Response, next: NextFunction) => {
 	const transaction = blockchain.getTransaction(req.params.hash!);
-	if (transaction.mempoolIndex === -1) {
+	if (transaction.mempoolIndex === -1 && transaction.blockIndex === -1) {
 		return res.sendStatus(404); // Not Found
 	}
 	
@@ -97,12 +99,41 @@ app.get('/blocks/:indexOrHash', (req: Request, res: Response, next: NextFunction
 });
 
 
+// Endpoint: mine -- Simulate mining the protoBlock -- for manual testing purposes
+// Should not be used in production
+app.get('/blocks/mine/:minerAddress', (req: Request, res: Response) => {
+  const minerAddress = req.params.minerAddress;
+
+  const blockInfo = blockchain.getNextBlock();
+  const controle = JSON.stringify(blockInfo.protoBlock);
+  if (blockInfo.protoBlock.getHash() === "-Empty ProtoBlock-") {
+    return res.status(422).json({ error: 'There is no protoBlock to mine on the blockchain' });
+  }
+  
+  blockInfo.protoBlock.reward(minerAddress!, blockInfo.feePerTX);
+  blockInfo.protoBlock.mine( blockchain.getDifficulty() );
+
+  res.status(201).json({ nonce: blockInfo.protoBlock.getNonce(), miner: blockInfo.protoBlock.getMiner() });
+});
+
+
+app.get('/wallets/:walletAddress', (req: Request, res: Response, next: NextFunction) => {
+  const walletAddress = req.params.walletAddress!;
+
+  res.json({ 
+    balance: blockchain.getBalance(walletAddress), 
+    feePerTX: blockchain.getFeePerTX(), 
+    utxo: blockchain.getUTXO(walletAddress) 
+  });
+});
+
+
 app.post('/blocks/', (req: Request, res: Response, next: NextFunction) => {
   if (!req.body.miner || req.body.nonce === undefined || req.body.feePerTX === undefined) 
     return res.status(400).json({ error: 'A JSON {"nonce": number}, {"miner": string}, {"feePerTX": number} is required', received: req.body }); // Bad Request
 
   const { nonce, miner, feePerTX } = req.body;
-  const validation = blockchain.addBlock(nonce, miner, feePerTX);
+  const validation = blockchain.addBlock(nonce, miner, blockchain.getReward());
 
   if (!validation.success) {
     return res.status(422).json(validation);// Unprocessable Entity
@@ -149,32 +180,7 @@ app.post('/transactions/transactionInputs/sign', (req: Request, res: Response, n
     res.status(422).json({ "Validation error": validation.message });
   }
 
-  res.status(201).json({ message: 'TransactionInput created successfully: ', transactionInput });
-});
-
-
-// Endpoint: mine -- Simulate mining the protoBlock -- for manual testing purposes
-// Should not be used in production
-app.post('/mine/', (req: Request, res: Response) => {
-  const blockInfo = req.body;
-  if (!blockInfo) {
-    return res.status(400).json({ error: 'Block info is required' });
-  }
-
-  // const transactions: Transaction[] = blockInfo.protoBlock.transactions.map((tx: any) => new Transaction({
-  //   ...tx
-  // }));
-
-  const block = new Block({
-    previousHash: blockInfo.protoBlock.previousHash,
-    timestamp: blockInfo.protoBlock.timestamp,
-    transactions: blockInfo.protoBlock.transactions
-  });
-  
-  block.reward("miner_wallet_address", blockInfo.feePerTX);
-  block.mine( blockchain.getDifficulty() );
-
-  res.status(201).json({ nonce: block.getNonce(), miner: block.getMiner(), block });
+  res.status(201).json({ message: 'TransactionInput signed successfully: ', transactionInput });
 });
 
 

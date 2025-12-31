@@ -9,7 +9,7 @@ export default class Block {
     private previousHash: string;
     private nonce: number;
     private miner: string;
-    private transactions: Transaction[];
+    private transactions: Array<Transaction> = Array<Transaction>();
     private hash: string;
     private timestamp: number;
 
@@ -18,15 +18,20 @@ export default class Block {
      * @param data - A structure containing all data for the block.
      */
     constructor(data: {
-        transactions: Array<{
+        transactions?: Array<{
             type?: TransactionType;
             timestamp?: number;
-            to?: string;
-            txInput?: {
+            txInputs?: Array<   {
                 fromAddress?: string;
                 amount?: number;
                 signature?: string;
-            };
+                previousTx?: string;
+            }>;
+            txOutputs?: Array<{
+                toAddress?: string;
+                amount?: number;
+                tx?: string;
+            }>;
             hash?: string;
         }>;
         previousHash?: string;
@@ -35,11 +40,15 @@ export default class Block {
         miner?: string;
         hash?: string;
     }) {
-        this.transactions = data.transactions.map(tx => new Transaction(tx))
         this.previousHash = data.previousHash || "";
         this.timestamp = data.timestamp || Date.now();
         this.nonce = data.nonce || 0;
         this.miner = data.miner || "";
+        if (data.transactions) {
+            if (data.transactions.length){
+                this.transactions = data.transactions.map(tx => new Transaction(tx)) ;
+            }
+        }
         this.hash = data.hash || this.generateHash();
     }
 
@@ -66,13 +75,15 @@ export default class Block {
     }
 
 
-    reward(miner: string, feePerTX: number) {
+    reward(miner: string, blockchainReward: number) {
         this.miner = miner;
-        // this.transactions.push(new Transaction({
-        //     type: TransactionType.FEE,
-        //     timestamp: this.timestamp,
-        //     data: `Mining reward for ${miner}: ${feePerTX * this.transactions.length} units`
-        // }));
+        this.transactions.push(new Transaction({
+            type: TransactionType.FEE,
+            txOutputs: [{
+                toAddress: miner,
+                amount: blockchainReward || 50
+            }]
+        }));
     }
 
 
@@ -81,8 +92,7 @@ export default class Block {
      * @returns An array of transactions of the specified type.
      */
     getTransactions(transactionType?: TransactionType): Transaction[] {
-        // const txType = transactionType === undefined ? TransactionType.REGULAR : transactionType;
-        return this.transactions //.filter(tx => tx.getType() === txType);
+        return this.transactions
     }
 
 
@@ -105,20 +115,20 @@ export default class Block {
 
 
     /**
-     * Get Mock Block hash
-     * @returns the .hash property
-     */
-    getHash(): string{
-        return this.hash;
-    }
-
-
-    /**
      * Get Mock Block previoushash
      * @returns the .previousHash property
      */
     getPreviousHash(): string{
         return this.previousHash;
+    }
+
+
+    /**
+     * Get Mock Block hash
+     * @returns the .hash property
+     */
+    getHash(): string{
+        return this.hash;
     }
 
 

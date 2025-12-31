@@ -7,44 +7,29 @@ import Block from '../lib/block';
 import Transaction from '../lib/transaction';
 import { json } from 'express';
 import TransactionType from '../lib/transactionType';
+import Wallet from '../lib/wallet';
 
 const BLOCKCHAIN_SERVER_URL = `${process.env.BLOCKCHAIN_SERVER}`; // || 'http://localhost:3000';
 
 console.log(`Connecting to Blockchain Server at ${BLOCKCHAIN_SERVER_URL}`);
 
-const minerWallet = {
-    privateKey: `${process.env.MINER_PRIVATE_KEY}` || "123456",
-    publicKey: `${process.env.MINER_PUBLIC_KEY}` || "Zimmer"
-}
+const minerWallet = new Wallet("87b1899544195b78bb7988434d8291213dfe9853856e46e57d2f20ffaed61200");
 
 let totalMined = 0;
 
 async function mineBlock() {
-    // create a transaction first
-    await axios.post(`${BLOCKCHAIN_SERVER_URL}/transactions/`, {
-        data: `Transaction from miner ${minerWallet.publicKey} at ${new Date().toISOString()}`
-    });
 
     console.log("Getting next block info...")
     const data = JSON.parse(await axios.get(`${BLOCKCHAIN_SERVER_URL}/blocks/next`).then(res => JSON.stringify(res.data)));
 
     // Recreate transactions array
-    const transactions: Transaction[] = data.protoBlock.transactions.map((tx: any) => new Transaction({
-    type: tx.type,
-    timestamp: tx.timestamp,
-    hash: tx.hash,
-    data: tx.data
-    }));
+    // const transactions: Transaction[] = data.protoBlock.transactions.map((tx: any) => new Transaction({...tx}));
 
     // Create new block
-    const newBlock = new Block({
-    transactions: transactions,
-    previousHash: data.protoBlock.previousHash,
-    timestamp: data.protoBlock.timestamp,
-    });
+    const newBlock = new Block({...data.protoBlock});
 
     console.log(`Start mining block #${data.index}`);
-    newBlock.reward(minerWallet.publicKey, data.feePerTX);
+    newBlock.reward(minerWallet.getPublicKey(), data.blockchainReward);
     newBlock.mine(data.difficulty);
     console.log("Block mined! Sending to blockchain..." + JSON.stringify(newBlock));
 

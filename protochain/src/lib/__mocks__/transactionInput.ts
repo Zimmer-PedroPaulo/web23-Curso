@@ -6,25 +6,27 @@ export default class TransactionInput {
     private fromAddress: string;
     private amount: number;
     private signature: string;
+    private previousTx: string;
 
     /** Create a new TransactionInput.
      * @param txInput - Optional structure containing transaction input data.
      */
-    constructor(txInput?: {fromAddress?: string; amount?: number; signature?: string}) {
+    constructor(txInput?: {
+            fromAddress?: string; 
+            amount?: number; 
+            signature?: string; 
+            previousTx?: string;
+        })
+        {
         this.fromAddress = txInput?.fromAddress || 'TransactionInput_mocked_wallet_address';
         this.amount = txInput?.amount || 10;
         this.signature = txInput?.signature || 'TransactionInput_mocked_signature';
+        this.previousTx = txInput?.previousTx || 'TransactionInput_mocked_previousTx';
     }
 
     isValid(): Validation {
         if (this.signature.includes("invalid")) {
             return new Validation(false, "Invalid mocked transactionInput");
-        }
-        
-// console.log("Mocked TransactionInput: fromAddress", this.fromAddress, "signature:", this.signature);
-        // usa os primeiros caracteres do fromAddress para validar a assinatura mockada
-        if (!this.signature.startsWith(this.fromAddress.substring(0, this.fromAddress.length - 18))) {
-            return new Validation(false, "Invalid mocked signature");
         }
 
         return new Validation(true);

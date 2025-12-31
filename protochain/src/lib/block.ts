@@ -10,7 +10,7 @@ export default class Block {
     private previousHash: string;
     private nonce: number;
     private miner: string;
-    private transactions: Transaction[];
+    private transactions: Array<Transaction> = Array<Transaction>();
     private hash: string;
     private timestamp: number;
 
@@ -19,15 +19,20 @@ export default class Block {
      * @param data - A structure containing all data for the block.
      */
     constructor(data: {
-        transactions: Array<{
+        transactions?: Array<{
             type?: TransactionType;
             timestamp?: number;
-            to?: string;
-            txInput?: {
+            txInputs?: Array<   {
                 fromAddress?: string;
                 amount?: number;
                 signature?: string;
-            };
+                previousTx?: string;
+            }>;
+            txOutputs?: Array<{
+                toAddress?: string;
+                amount?: number;
+                tx?: string;
+            }>;
             hash?: string;
         }>;
         previousHash?: string;
@@ -36,12 +41,18 @@ export default class Block {
         miner?: string;
         hash?: string;
     }) {
-        this.transactions = data.transactions.map(tx => new Transaction(tx));
+// console.log("Block constructor: receiving:", data);
         this.previousHash = data.previousHash || "";
         this.timestamp = data.timestamp || Date.now();
         this.nonce = data.nonce || 0;
         this.miner = data.miner || "";
+        if (data.transactions) {
+            if (data.transactions.length){
+                this.transactions = data.transactions.map(tx => new Transaction(tx)) ;
+            }
+        }
         this.hash = data.hash || this.generateHash();
+// console.log("Block constructor: created:", this);
     }
 
 
@@ -51,23 +62,34 @@ export default class Block {
      * @returns Return a Validation object indicating if the block is valid.
      */
     isValid(difficulty: number = -1): Validation {
-        if(this.transactions.filter(tx => tx.getType() === TransactionType.FEE).length > 1) {
-            return new Validation(false, "Too many fee transactions");
+        if (!this.nonce || !this.miner || this.nonce < 1) {
+            return new Validation(false, "Block.ts: Not mined block");
         }
+
+        const feeTxs = this.transactions.filter(tx => tx.getType() === TransactionType.FEE)
+        if(feeTxs.length !== 1) {
+            return new Validation(false, "Block.ts: A block must have exactly one fee transaction");
+        }
+        if(feeTxs.length === 1 && feeTxs[0]!["txOutputs"] && !(feeTxs[0]!["txOutputs"].some(txo => txo["toAddress"] === this.getMiner()))) {
+            return new Validation(false, "Block.ts: Fee transaction must have an txOutput with the miner address");
+        }
+
+        if (this.getTransactions(TransactionType.REGULAR).length === 0) {
+            return new Validation(false, "Block.ts: Block must have at least one regular transaction");
+        }
+
+        // TODO: validate transaction's FEEs
 
         const txValidations = this.transactions.map(tx => tx.isValid());
         const errors = txValidations.filter(v => !v.success).map(v => v.message);
         if(errors.length) {
-            return new Validation(false, "Invalid transaction in block: " + errors.reduce((a,b) => a + "; " + b));
-        }
-
-        if (!this.nonce || !this.miner) {
-            return new Validation(false, "Not mined block");
+            return new Validation(false, "Block.ts: Invalid transaction in block: " + errors.reduce((a,b) => a + "; " + b));
         }
 
         const prefix = new Array(difficulty + 1).join("0");
-        if (!this.hash.startsWith(prefix) || this.hash !== this.generateHash())
-            return new Validation(false, "Invalid hash");
+        if (!this.hash.startsWith(prefix) || this.hash !== this.generateHash()){
+            return new Validation(false, "Block.ts: Invalid hash");
+        }
 
         return new Validation(true);
     }
@@ -78,8 +100,11 @@ export default class Block {
      * @returns calculated hash (not the property .hash stored in block)
      */
     generateHash(nonce?: number, miner?: string): string {
-        const txs = this.transactions.map(tx => tx.getHash()).reduce((a, b) => a + b);
-
+        let txs: string = "";
+        if (this.transactions.length){
+            const txs = this.transactions.map(tx => tx.getHash()).reduce((a, b) => a + b);
+        }
+        
         return sha256(
             txs +
             this.timestamp +
@@ -114,15 +139,27 @@ export default class Block {
     }
 
 
-    reward(miner: string, feePerTX: number) {
-        if (this.transactions.filter(tx => tx.getType() === TransactionType.FEE).length === 0) {
-            this.miner = miner;
-            this.transactions.push(new Transaction({
-                type: TransactionType.FEE,
-                timestamp: this.timestamp,
-                to: `Mining reward for ${miner}: ${feePerTX * this.transactions.length} units`
-            }));
+    /** Add a reward transaction to the block for the miner.
+     * Calculates the total as the diference between txInputs and txOutputs from each transaction in the block 
+     * and adds the blockchain reward to it. 
+     * @param miner - The miner's wallet address.
+     * @param blockchainReward - The blockchain reward amount.
+     * @returns A Validation object indicating success or failure.
+     */
+    reward(miner: string, blockchainReward: number): Validation {
+        if (this.transactions.filter(tx => tx.getType() === TransactionType.FEE).length !== 0) {
+            return new Validation(false, "Block.reward: Block already has a fee transaction");
         }
+
+        this.miner = miner;
+        this.transactions.push(new Transaction({
+            type: TransactionType.FEE,
+            txOutputs: [{ 
+                toAddress: miner, 
+                amount: this.transactions.reduce((sum, tx) => sum + tx.getFee(), 0) + blockchainReward,
+            }]
+        }));
+        return new Validation(true);
     }
 
 

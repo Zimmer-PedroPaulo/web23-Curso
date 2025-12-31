@@ -6,8 +6,8 @@ export default class Wallet {
     private publicKey: string;
     
         constructor(wifOrPrivateKey?: string) {
-            this.privateKey = wifOrPrivateKey + "mocked_private_key";
-            this.publicKey = wifOrPrivateKey + "mocked_public_key";
+            this.privateKey = wifOrPrivateKey || "mocked_private_key";
+            this.publicKey = wifOrPrivateKey || "mocked_public_key";
         }
 
         getPublicKey(): string {

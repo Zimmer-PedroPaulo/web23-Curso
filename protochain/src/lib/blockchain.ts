@@ -2,10 +2,11 @@ import Block from './block';
 import BlockInfo from './blockInfo';
 import Transaction from './transaction';
 import TransactionInput from './transactionInput';
+import TransactionOutput from './transactionOutput';
 import TransactionSearch from './transactionSearch';
-import TransactionType from './transactionType';
 import Validation from './validation';
 import Wallet from './wallet';
+
 
 /**
  * Class representing a simple Blockchain.
@@ -17,28 +18,26 @@ export default class Blockchain {
     private genesisWallet: Wallet;
 
     static readonly DIFFICULTY_FACTOR = 5;
-    static readonly MAX_DIFFICULTY = 62;
+    static readonly MAX_DIFFICULTY = 16;
     static readonly TX_PER_BLOCK = 2;
 
     /**
      * Create a new Blockchain.
      */
     constructor() {
-        this.genesisWallet = new Wallet('87b1899544195b78bb7988434d8291213dfe9853856e46e57d2f20ffaed61200');
+        this.genesisWallet = new Wallet(process.env.BLOCKCHAIN_PRIVATE_KEY);
         this.mempool = [];
-        this.blocks = [new Block({
-            miner: "genesis", 
-            transactions: [{
-                type: TransactionType.FEE,
-                timestamp: 0,
-                to: "03ab48e01eda74405c5a1ea4d51ebf98f8f470a86e9d5e8bc38ff5ecd76fde3348",
-                txInput: {
-                    fromAddress: "",
-                    amount: 50,
-                }
-            }]
-        })];
-        this.blocks[0]!.getTransactions()[0]!["txInput"]!.sign(this.genesisWallet['privateKey']);
+        this.blocks = new Array<Block>();
+
+        const genesisBlock = new Block({
+            previousHash: "0".repeat(64),
+            transactions: [],
+        });
+        genesisBlock.reward(this.genesisWallet.getPublicKey(), this.getReward());
+        genesisBlock.mine(this.getDifficulty());
+
+        this.blocks.push(genesisBlock);
+
         this.protoBlock = new Block({
             transactions: [],
             hash: "-Empty ProtoBlock-"
@@ -75,6 +74,35 @@ export default class Blockchain {
      * @returns Return a Validation object indicating if the transaction is successfuly added.
      */ 
     addTransaction(transaction: Transaction): Validation {
+        if(transaction["txInputs"] && transaction["txInputs"].length) {
+            const txFromAddress = transaction["txInputs"]?.[0]?.["fromAddress"];
+            const pendingTxs = this.mempool
+                .filter(tx => tx["txInputs"])
+                .map(tx => tx["txInputs"])
+                .flat()
+                .filter(txi => txi!["fromAddress"] === txFromAddress);
+            const protoBlockTxs = this.protoBlock.getTransactions()
+                .filter(tx => tx["txInputs"])
+                .map(tx => tx["txInputs"])
+                .flat()
+                .filter(txi => txi!["fromAddress"] === txFromAddress);
+            pendingTxs.push(...protoBlockTxs);
+
+            if(pendingTxs && pendingTxs.length) {
+                return new Validation(false, "There is already a pending transaction from this address in the mempool");
+            }
+
+            const utxo = this.getUTXO(txFromAddress!);
+            // const inputSum = transaction["txInputs"].reduce((sum, txi) => sum + txi["amount"], 0);
+            for(const txi of transaction["txInputs"]) {
+                if (utxo.findIndex(txo => txo!["tx"] === txi["previousTx"]) === -1) {
+                    return new Validation(false, "previousTx in a transactionInput is already spent or does not exist");
+                }
+            }
+        }
+
+        // TODO: Further checks like balance, double spending, etc.
+
         const validation = transaction.isValid();
         if (!validation.success) {
             return new Validation(false, `Invalid transaction: ${validation.message}`);
@@ -99,7 +127,7 @@ export default class Blockchain {
      * @returns Return a Validation object indicating if the block is successfuly added.
      */
     addBlock(nonce: number, miner: string, feePerTX: number): Validation {
-        if (!this.protoBlock.getTransactions(TransactionType.REGULAR).length){
+        if (!this.protoBlock.getHash() || this.protoBlock.getHash() === "-Empty ProtoBlock-") {
             return new Validation(false, "No protoBlock to add");
         }
 
@@ -128,20 +156,15 @@ export default class Blockchain {
     }
 
 
-    getMempool(): Transaction[] {
-        return JSON.parse(JSON.stringify(this.mempool)) as Transaction[];
-    }
-
-
     getTransaction(hash: string): TransactionSearch {
         const block = this.blocks.find(block => 
             block.getTransactions().some(tx => tx.getHash() === hash)
         );
-
         const blockIndex = block? this.blocks.indexOf(block) : -1;
-        const mempoolIndex = this.mempool.findIndex(tx => tx.getHash() === hash);
 
+        const mempoolIndex = this.mempool.findIndex(tx => tx.getHash() === hash);
         const tx = mempoolIndex !== -1 ? this.mempool[mempoolIndex] : blockIndex !== -1 ? this.blocks[blockIndex]?.getTransactions().find(tx => tx.getHash() === hash) : undefined;
+        
         return  {
             transaction: tx? JSON.parse(JSON.stringify(tx)) : undefined,
             blockIndex: blockIndex,
@@ -162,13 +185,6 @@ export default class Blockchain {
         } else {
             return this.blocks.find(block => block.getHash() === indexOrHash);
         }
-    // getBlock(indexOrHash: string): Block | undefined {
-    //     let block = this.blocks.find(block => block.getHash() === indexOrHash);
-    //     if (!block && /^[0-9]+$/.test(indexOrHash)) {
-    //         block = this.blocks[parseInt(indexOrHash)];
-    //     }
-
-    //     return block? JSON.parse(JSON.stringify(block)) as Block : undefined;
     }
 
     
@@ -206,9 +222,11 @@ export default class Blockchain {
             index: this.blocks.length,
             difficulty: this.getDifficulty(),
             feePerTX: this.getFeePerTX(),
+            blockchainReward: this.getReward(),
             protoBlock: this.protoBlock
         } as BlockInfo;
     }
+
 
 
     /**
@@ -218,13 +236,24 @@ export default class Blockchain {
      * @returns The difficulty level.
      */
     getDifficulty(blockIndex?: number): number {
-        const index = blockIndex !== undefined ? blockIndex : this.blocks.length;   
-        return Math.ceil(index / Blockchain.DIFFICULTY_FACTOR);
+        const index = blockIndex !== undefined ? blockIndex : this.blocks.length;
+        const difficulty = Math.ceil(index / Blockchain.DIFFICULTY_FACTOR);
+
+        if (difficulty > Blockchain.MAX_DIFFICULTY) {
+            return Blockchain.MAX_DIFFICULTY;
+        }
+
+        return difficulty;
     }
 
 
     getFeePerTX(): number{
         return 1;
+    }
+
+
+    getReward(): number{
+        return 16 - this.getDifficulty();
     }
 
 
@@ -243,5 +272,56 @@ export default class Blockchain {
      */
     getChain(): Block[] {
         return JSON.parse(JSON.stringify(this.blocks)) as Block[];
+    }
+
+
+    getMempool(): Transaction[] {
+        return JSON.parse(JSON.stringify(this.mempool)) as Transaction[];
+    }
+
+
+    getBalance(walletAddress: string): number {
+        const utxo = this.getUTXO(walletAddress);
+        return utxo.reduce((sum, txo) => sum + (txo!["amount"]), 0);
+    }
+
+
+    getUTXO(walletAddress: string): (TransactionOutput | undefined)[] {
+        const txIns = this.getTxInputs(walletAddress);
+        const txOuts = this.getTxOutputs(walletAddress);
+
+        if (!txIns || !txIns.length) {
+            return txOuts;
+        }
+
+        txIns.forEach(txi => {
+            const index = txOuts.findIndex(txo => 
+                txo!["amount"] === txi!["amount"]
+            );
+            txOuts.splice(index, 1);
+        });
+
+        return txOuts;
+    }
+
+
+    private getTxInputs(walletAddress: string): TransactionInput[] {
+        return this.blocks
+        .map(block => block.getTransactions())
+        .flat()
+        .map(tx => tx["txInputs"] && tx["txInputs"].length ? tx["txInputs"] : [])
+        .flat()
+        .filter(txi => txi!["fromAddress"] === walletAddress);
+    }
+
+
+    private getTxOutputs(walletAddress: string): (TransactionOutput | undefined)[] {
+        return this.blocks
+        .map(block => block.getTransactions())
+        .flat()
+        .filter(tx => tx["txOutputs"] && tx["txOutputs"].length)
+        .map(tx => tx["txOutputs"])
+        .flat()
+        .filter(txo => txo!["toAddress"] === walletAddress);
     }
 }

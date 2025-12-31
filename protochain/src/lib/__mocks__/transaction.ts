@@ -1,4 +1,5 @@
-import TransactionInput from '../transactionInput';
+import TransactionInput from '../__mocks__/transactionInput';
+import TransactionOutput from '../__mocks__/transactionOutput';
 import TransactionType from '../transactionType';
 import Validation from '../validation';
 
@@ -8,27 +9,47 @@ import Validation from '../validation';
 export default class Transaction {
     private type: TransactionType;
     private timestamp: number;
+    private txInputs: Array<TransactionInput> | undefined;
+    private txOutputs: Array<TransactionOutput> | undefined;
     private hash: string;
-    private txInput: TransactionInput;
-    private to: string;
 
 
     /**
      * Create a MOCKED Transaction.
      * @param tx - Optional structure containing transaction data.
      */
-    constructor(tx?: Transaction | {
+    constructor(tx?: {
         type?: TransactionType;
         timestamp?: number;
-        to?: string;
-        txInput?: TransactionInput;
+        txInputs?: Array<{
+            fromAddress?: string;
+            amount?: number;
+            signature?: string;
+            previousTx?: string;
+        }>;
+        txOutputs?: Array<{
+            toAddress?: string;
+            amount?: number;
+            tx?: string;
+        }>;
         hash?: string;
     }) {
-        this.type = tx instanceof Transaction ? tx.type : tx?.type || TransactionType.REGULAR;
-        this.timestamp = tx instanceof Transaction ? tx.timestamp : tx?.timestamp || Date.now();
-        this.to = tx instanceof Transaction ? tx.to : tx?.to || '';
-        this.txInput = tx instanceof Transaction ? new TransactionInput(tx.txInput) : tx?.txInput ? new TransactionInput(tx.txInput) : new TransactionInput();
-        this.hash = tx instanceof Transaction ? tx.hash : tx?.hash || this.generateHash();
+        this.type = tx?.type || TransactionType.REGULAR;
+        this.timestamp = tx?.timestamp || Date.now();
+        
+        this.txInputs = tx?.txInputs 
+        ? tx.txInputs.map(txi => new TransactionInput(txi))
+        : undefined;
+        
+        this.txOutputs = tx?.txOutputs 
+        ? tx.txOutputs.map(txo => new TransactionOutput(txo))
+        : undefined;
+
+        this.hash = tx?.hash || this.generateHash();
+
+        if (this.txOutputs && this.txOutputs.length) {
+            this.txOutputs.forEach(txo => txo["tx"] = this.hash);
+        }
     }
 
 
@@ -40,11 +61,21 @@ export default class Transaction {
         if(this.hash === "Invalid mock transaction") {
             return new Validation(false, 'Invalid mock transaction');
         }
-
-        if(!this.txInput.isValid().success) {
-            return new Validation(false, 'Invalid mock transactionInput');
-        }
         return new Validation(true);
+    }
+
+
+    /**     * Get the fee of the transaction.
+     * @returns The fee amount of the transaction.
+     */
+    getFee(): number {
+        if (!this.txInputs || !this.txInputs.length) {
+            return 0;
+        }
+
+        // const inputSum = this.txInputs.reduce((sum, txi) => sum + txi["amount"], 0);
+        // const outputSum = this.txOutputs ? this.txOutputs.reduce((sum, txo) => sum + txo["amount"], 0) : 0;
+        return 1 //inputSum - outputSum;
     }
 
 
@@ -53,7 +84,13 @@ export default class Transaction {
      * @returns The mocked hash of the transaction details.
      */
     private generateHash(): string {
-        return "mocked transaction hash";
+        // wait a moment...
+        // (blockchain is generating 2 mocked transactions with same timestamp....)
+        const start = Date.now();
+        while (Date.now() - start < 100) {
+            // Simulate delay
+        }
+        return "mocked transaction hash-" + this.timestamp;
     }
 
 

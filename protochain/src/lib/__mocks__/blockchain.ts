@@ -2,8 +2,9 @@ import Block from './block';
 import Validation from '../validation';
 import BlockInfo from '../blockInfo';
 import Transaction from '../transaction';
-import TransactionType from '../transactionType';
 import TransactionSearch from '../transactionSearch';
+import Wallet from '../wallet';
+import TransactionOutput from '../transactionOutput';
 import TransactionInput from '../transactionInput';
 
 /**
@@ -13,29 +14,29 @@ export default class Blockchain {
     private blocks: Block[];
     private mempool: Transaction[];
     private protoBlock: Block;
+    private genesisWallet: Wallet;
 
     static readonly DIFFICULTY_FACTOR = 5;
-    static readonly MAX_DIFFICULTY = 62;
+    static readonly MAX_DIFFICULTY = 16;
     static readonly TX_PER_BLOCK = 2;
 
     /**
      * Create a new mocked Blockchain.
      */
     constructor() {
+        this.genesisWallet = new Wallet(process.env.BLOCKCHAIN_PRIVATE_KEY);
         this.mempool = [];
-        this.blocks = [new Block({
-            miner: "genesis", 
-            transactions: [new Transaction({
-                type: TransactionType.FEE,
-                timestamp: 999999999,
-                to: "87b1899544195b78bb7988434d8291213dfe9853856e46e57d2f20ffaed61200",
-                txInput: new TransactionInput({
-                    fromAddress: "03ab48e01eda74405c5a1ea4d51ebf98f8f470a86e9d5e8bc38ff5ecd76fde3348",
-                    amount: 50,
-                    signature: "genesis-signature"
-                }) as TransactionInput
-            }) as Transaction]
-        })];
+                this.blocks = new Array<Block>();
+        
+                const genesisBlock = new Block({
+                    previousHash: "0".repeat(64),
+                    transactions: [],
+                });
+                genesisBlock.reward(this.genesisWallet.getPublicKey(), this.getReward());
+                genesisBlock.mine(this.getDifficulty());
+        
+                this.blocks.push(genesisBlock);
+
         this.protoBlock = new Block({
             transactions: [],
             hash: "-Empty ProtoBlock-"
@@ -66,44 +67,13 @@ export default class Blockchain {
     }
     
 
-    getMempool(): Transaction[] {
-        return JSON.parse(JSON.stringify(this.mempool)) as Transaction[];
-        }
-
-
-    getTransaction(hash: string): TransactionSearch {
-        const mempoolIndex = this.mempool.findIndex(tx => tx.getHash() === hash);
-        // if (mempoolIndex !== -1) {
-            return {
-                transaction: this.mempool[mempoolIndex],
-                mempoolIndex,
-                blockIndex: -1
-            } as TransactionSearch;
-        // }
-
-        // const blockIndex = this.blocks.findIndex(block => 
-        //     block.getTransactions().some(tx => tx.getHash() === hash)
-        // );
-        // if (blockIndex !== -1) {
-        //         const transaction = this.blocks[blockIndex].getTransactions().find(tx => tx.getHash() === hash);
-        //             return {
-        //                 transaction,
-        //                 mempoolIndex: -1,
-        //                 blockIndex
-        //             } as TransactionSearch;
-        // }
-
-        // return {blockIndex: -1, mempoolIndex: -1} as TransactionSearch;
-    }
-    
-
     /**
      * Add a new block to blockchain.
      * @param block - a Block object to add to.
      * @returns Return a Validation object indicating if the block is successfuly added.
      */
     addBlock(nonce: number, miner: string, feePerTX: number): Validation {
-        if (!this.protoBlock.getTransactions(TransactionType.REGULAR).length){
+        if (!this.protoBlock.getHash() || this.protoBlock.getHash() === "-Empty ProtoBlock-") {
             return new Validation(false, "No protoBlock to add");
         }
         this.protoBlock.reward(miner, feePerTX);
@@ -111,11 +81,25 @@ export default class Blockchain {
 
         this.blocks.push(this.protoBlock);
         this.protoBlock = new Block({
-            transactions: [],
             hash: "-Empty ProtoBlock-"
         });
 
         return new Validation(true, "Mock blockchain added a block successfully.");
+    }
+    
+
+
+
+    
+
+
+    getTransaction(hash: string): TransactionSearch {
+        const mempoolIndex = this.mempool.findIndex(tx => tx.getHash() === hash);
+        return {
+            transaction: this.mempool[mempoolIndex],
+            mempoolIndex,
+            blockIndex: -1
+        } as TransactionSearch;
     }
 
 
@@ -151,9 +135,11 @@ export default class Blockchain {
         }
 
         // Create the protoBlock if not exists
-        if(this.protoBlock.getHash() === "-Empty ProtoBlock-"){            
+        if(this.protoBlock.getHash() === "-Empty ProtoBlock-"){
+            const protoBlockTransactions = this.mempool.splice(0, Blockchain.TX_PER_BLOCK);
+            
             this.protoBlock = new Block({
-                transactions: this.mempool,
+                transactions: JSON.parse(JSON.stringify(protoBlockTransactions)),
                 previousHash: this.getLastBlock().getHash(),
                 timestamp: Date.now(),
                 hash: "not-mined-yet"
@@ -179,6 +165,11 @@ export default class Blockchain {
     }
 
 
+    getReward(): number{
+        return 16 - this.getDifficulty();
+    }
+    
+
     /**
      * Get the blockchain length.
      * @returns the blockchain blocks count.
@@ -194,5 +185,39 @@ export default class Blockchain {
      */
     getChain(): Block[] {
         return this.blocks;
+    }
+
+
+    getMempool(): Transaction[] {
+        return JSON.parse(JSON.stringify(this.mempool)) as Transaction[];
+    }
+
+
+    getBalance(walletAddress: string): number {
+        return 10;
+    }
+
+
+    getUTXO(walletAddress: string): (TransactionOutput | undefined)[] {
+        return this.getTxOutputs(walletAddress);
+    }
+
+
+    private getTxInputs(walletAddress: string): (TransactionInput | undefined)[] {
+        return [ new TransactionInput({
+            fromAddress: walletAddress,
+            amount: 10,
+            previousTx: "sample_tx_hash_0000000000000000000000000000000000000000000000000000000000",
+            signature: "sample_signature_0000000000000000000000000000000000000000000000000000000000"
+        }) ];
+    }
+
+
+    private getTxOutputs(walletAddress: string): (TransactionOutput | undefined)[] {
+        return [ new TransactionOutput({
+            toAddress: walletAddress,
+            amount: 10,
+            tx: "sample_tx_hash_0000000000000000000000000000000000000000000000000000000000"
+        }) ];
     }
 }

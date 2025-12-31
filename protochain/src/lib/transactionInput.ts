@@ -12,6 +12,7 @@ export default class TransactionInput {
     private fromAddress: string;
     private amount: number;
     private signature: string;
+    private previousTx: string;
 
     /** Create a new TransactionInput.
      * @param txInput - Optional structure containing transaction input data.
@@ -20,12 +21,14 @@ export default class TransactionInput {
         fromAddress?: string; 
         amount?: number; 
         signature?: string
+        previousTx?: string;
     }) 
     {
 // console.log("TransactionInput constructor: receiving:", txInput);
         this.fromAddress = txInput?.fromAddress || '';
         this.amount = txInput?.amount || 0;
         this.signature = txInput?.signature || '';
+        this.previousTx = txInput?.previousTx || '';
 // console.log("TransactionInput constructor: created:", this);
     }
 
@@ -33,6 +36,10 @@ export default class TransactionInput {
     isValid(): Validation {
         if (!this.signature) {
             return new Validation(false, "Signature is required");
+        }
+
+        if (this.previousTx.length < 64) {
+            return new Validation(false, "Previous transaction hash is invalid");
         }
 
         if (this.amount < 1) {
@@ -56,6 +63,6 @@ export default class TransactionInput {
 
 
     getHash(): string {
-        return sha256(this.fromAddress + this.amount).toString();
+        return sha256(this.previousTx + this.fromAddress + this.amount).toString();
     }
 }
